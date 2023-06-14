@@ -61,8 +61,8 @@ else
 fi
 
 ## Download the stop words if they don't exist, no one packages them
-if [ ! -e "./dist/$LANGFULL.stop" ]; then
-	wget --no-verbose "https://raw.githubusercontent.com/stopwords-iso/stopwords-$LANG/master/stopwords-$LANG.txt" -O "./dist/$LANGFULL.stop";
+if [ ! -e "./temp/$LANGFULL.stop" ]; then
+	wget --no-verbose "https://raw.githubusercontent.com/stopwords-iso/stopwords-$LANG/master/stopwords-$LANG.txt" -O "./temp/$LANGFULL.stop";
 fi
 
 ## also a bit of processing..
@@ -77,6 +77,7 @@ fi
 #    > the FLAG with the encoding of the file.
 sed -e '1d' -e '/^$/d' "./temp/$IDENTIFIER.utf8.dic" | sort > "./dist/$identifier.dict"
 sed -e '2d' "./temp/$IDENTIFIER.utf8.aff" > "./dist/$identifier.affix"
+sort -o "./dist/$LANGFULL_hunspell.stop" "./temp/$LANGFULL.stop"
 
 # Offer to install in Arch Linux
 if command -v pacman > /dev/null 2>&1 &&
@@ -87,7 +88,7 @@ then
 	PG_VERSION=$(pg_config --version);
 	echo "Attempting install for $PG_VERSION to $PG_TSEARCH_DATA";
 	sudo cp -v                   \
-		"./dist/$LANGFULL.stop"    \
+		"./dist/$LANGFULL_hunspell.stop"    \
 		"./dist/$identifier.affix" \
 		"./dist/$identifier.dict"  \
 		"$PG_TSEARCH_DATA";
@@ -99,7 +100,7 @@ CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_hunspell (
 	TEMPLATE  = ispell,
 	DictFile  = $IDENTIFIER,
 	AffFile   = $IDENTIFIER,
-	StopWords = $LANGFULL
+	StopWords = $LANGFULL_hunspell
 );
 COMMENT ON TEXT SEARCH DICTIONARY ${LANGFULL}_hunspell
 	IS '[USER ADDED] Hunspell dictionary for $LANGFULL';

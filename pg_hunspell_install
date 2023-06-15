@@ -35,22 +35,36 @@ mkdir -p ./dist ./temp;
 ## Use local files if we can and if they exist. Arch Linux
 if command -v pacman > /dev/null; then
 	echo "Arch Linux detected - using pacman";
-	PACKAGE="hunspell-$LANG"
+	PACKAGE="hunspell-$identifier"
 
-  if ! pacman -Qs "$PACKAGE"; then
+  	if ! pacman -Qs "$PACKAGE"; then
 		echo "Installing through pacman"
-		sudo -Syu "$PACKAGE";
+		sudo pacman -Syu "$PACKAGE";
 	fi;
 
 	for ext in aff dic; do
 		echo "Using local $IDENTIFIER.$ext";
-		SYSTEM_FILE=$(pacman -Ql "$PACKAGE" | grep "$IDENTIFIER.$ext");
+		SYSTEM_FILE=$(pacman -Qlq "$PACKAGE" | grep "$IDENTIFIER.$ext" | head -1 );
 		cp "$SYSTEM_FILE" "./temp/$IDENTIFIER.utf8.$ext" ;
 	done
 
+## Use local files if we can and if they exist. Debian/Ubuntu
+elif command -v apt-get > /dev/null; then
+	echo "Debian/Ubuntu detected - using apt";
+	PACKAGE="hunspell-$LANG"
 
-## Or we can download them..
-## From LibreOffice
+  if ! dpkg -V "$PACKAGE"; then
+		echo "Installing through apt-get"
+		sudo apt-get install --yes "$PACKAGE";
+	fi;
+
+	for ext in aff dic; do
+		echo "Using local $IDENTIFIER.$ext";
+		SYSTEM_FILE=$(dpkg -L "$PACKAGE" | grep "$IDENTIFIER.$ext");
+		cp "$SYSTEM_FILE" "./temp/$IDENTIFIER.utf8.$ext" ;
+	done
+
+# Or we can download them from LibreOffice
 
 else
     for ext in aff dic; do
@@ -66,57 +80,81 @@ if [ ! -e "./temp/$LANGFULL.stop" ]; then
 fi
 
 ## also a bit of processing..
+# 0. If the words COVID and coronavirus are not present on the dic file add them
 # 1. PostgreSQL wants .affix and .dict,
 #    LibreOffice uses .aff and .dic
 # 2. Remove first line of dic (from docs)
 #    > The first  line of the dictionaries (except personal dictionaries) contains
 #    > the approximate word count (for optimal hash memory  size).
-# 3. Removes blank lines (if they exist) and sorts dict
+# 3. Remove blank lines (if they exist) and sort dict
 # 4. Remove second line of aff (from docs)
 #    > The second  line of the spellcheck dictionaries files contains
 #    > the FLAG with the encoding of the file.
+# 5. Sort stopwords and add _hunspell to the filename
+
+for new_words in COVID coronavirus; do
+	grep -qxF $new_words "./temp/$IDENTIFIER.utf8.dic" || echo $new_words >> "./temp/$IDENTIFIER.utf8.dic"
+done;
 sed -e '1d' -e '/^$/d' "./temp/$IDENTIFIER.utf8.dic" | sort > "./dist/$identifier.dict"
 sed -e '2d' "./temp/$IDENTIFIER.utf8.aff" > "./dist/$identifier.affix"
-sort -o "./dist/$LANGFULL_hunspell.stop" "./temp/$LANGFULL.stop"
+sort -o "./dist/${LANGFULL}_hunspell.stop" "./temp/$LANGFULL.stop"
 
 # Offer to install in Arch Linux
 if command -v pacman > /dev/null 2>&1 &&
  	command -v pg_config > /dev/null 2>&1;
 then
-  echo "Arch detected using pacman"
 	PG_TSEARCH_DATA="$(pg_config --sharedir)/tsearch_data";
 	PG_VERSION=$(pg_config --version);
 	echo "Attempting install for $PG_VERSION to $PG_TSEARCH_DATA";
 	sudo cp -v                   \
-		"./dist/$LANGFULL_hunspell.stop"    \
+		"./dist/${LANGFULL}_hunspell.stop"    \
 		"./dist/$identifier.affix" \
 		"./dist/$identifier.dict"  \
 		"$PG_TSEARCH_DATA";
-	cat <<EOF
+
+# Offer to install in Debian/Ubuntu
+elif command -v apt-get > /dev/null 2>&1 &&
+ 	command -v pg_config > /dev/null 2>&1;
+then
+	PG_TSEARCH_DATA="$(pg_config --sharedir)/tsearch_data";
+	PG_VERSION=$(pg_config --version);
+	echo "Attempting install for $PG_VERSION to $PG_TSEARCH_DATA";
+	sudo cp -v                   \
+		"./dist/${LANGFULL}_hunspell.stop"    \
+		"./dist/$identifier.affix" \
+		"./dist/$identifier.dict"  \
+		"$PG_TSEARCH_DATA";
+fi;
+
+cat <<EOF
 --
--- Run this on the database
+-- Run this on the database each command at a time
 --
-CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_hunspell (
+CREATE TEXT SEARCH CONFIGURATION public.${LANGFULL}_original (
+	COPY = pg_catalog.$LANGFULL
+);
+COMMENT ON TEXT SEARCH CONFIGURATION public.${LANGFULL}_original
+IS 'copy of original postgres ${LANGFULL} text search configuration';
+
+ALTER TEXT SEARCH CONFIGURATION ${LANGFULL} 
+    DROP MAPPING FOR email, url, url_path,host, sfloat;
+
+CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell (
 	TEMPLATE  = ispell,
-	DictFile  = $IDENTIFIER,
-	AffFile   = $IDENTIFIER,
-	StopWords = $LANGFULL_hunspell
+	DictFile  = $identifier,
+	AffFile   = $identifier,
+	StopWords = ${LANGFULL}
 );
-COMMENT ON TEXT SEARCH DICTIONARY ${LANGFULL}_hunspell
-	IS '[USER ADDED] Hunspell dictionary for $LANGFULL';
-CREATE TEXT SEARCH CONFIGURATION public.$LANGFULL (
-	COPY = pg_catalog.english
-);
+COMMENT ON TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell
+	IS 'Hunspell dictionary for ${LANGFULL}_${identifier}';
+
 ALTER TEXT SEARCH CONFIGURATION $LANGFULL
 	ALTER MAPPING
 	FOR
 		asciiword, asciihword, hword_asciipart,  word, hword, hword_part
 	WITH
-		${LANGFULL}_hunspell, simple;
+		${LANGFULL}_${identifier}_hunspell, ${LANGFULL}_stem, simple;
 COMMENT ON TEXT SEARCH CONFIGURATION $LANGFULL
-	IS '[USER ADDED] configuration for $LANGFULL';
+	IS 'configuration for ${LANGFULL}_${identifier} language';
 EOF
-
-fi;
-
 echo "Finished!"

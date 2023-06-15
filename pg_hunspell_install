@@ -146,7 +146,7 @@ CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell (
 	StopWords = ${LANGFULL}
 );
 COMMENT ON TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell
-	IS 'Hunspell dictionary for ${LANGFULL}_${identifier}';
+IS 'Hunspell dictionary for ${LANGFULL}_${identifier}';
 
 ALTER TEXT SEARCH CONFIGURATION $LANGFULL
 	ALTER MAPPING
@@ -155,6 +155,6 @@ ALTER TEXT SEARCH CONFIGURATION $LANGFULL
 	WITH
 		${LANGFULL}_${identifier}_hunspell, ${LANGFULL}_stem, simple;
 COMMENT ON TEXT SEARCH CONFIGURATION $LANGFULL
-	IS 'configuration for ${LANGFULL}_${identifier} language';
+IS 'configuration for ${LANGFULL}_${identifier} language';
 EOF
 echo "Finished!"

@@ -106,10 +106,10 @@ then
 	PG_TSEARCH_DATA="$(pg_config --sharedir)/tsearch_data";
 	PG_VERSION=$(pg_config --version);
 	echo "Attempting install for $PG_VERSION to $PG_TSEARCH_DATA";
-	sudo cp -v                   \
-		"./dist/${LANGFULL}_hunspell.stop"    \
+	sudo cp -v \
+		"./dist/${LANGFULL}_hunspell.stop" \
 		"./dist/$identifier.affix" \
-		"./dist/$identifier.dict"  \
+		"./dist/$identifier.dict" \
 		"$PG_TSEARCH_DATA";
 
 # Offer to install in Debian/Ubuntu
@@ -119,26 +119,39 @@ then
 	PG_TSEARCH_DATA="$(pg_config --sharedir)/tsearch_data";
 	PG_VERSION=$(pg_config --version);
 	echo "Attempting install for $PG_VERSION to $PG_TSEARCH_DATA";
-	sudo cp -v                   \
-		"./dist/${LANGFULL}_hunspell.stop"    \
+	sudo cp -v \
+		"./dist/${LANGFULL}_hunspell.stop" \
 		"./dist/$identifier.affix" \
-		"./dist/$identifier.dict"  \
+		"./dist/$identifier.dict" \
 		"$PG_TSEARCH_DATA";
 fi;
 
 cat <<EOF
 --
--- Run this on the database each command at a time
+-- Run this once on the command line
 --
+echo "Attempting to make a copy of ${LANGFULL}.stop the original postgres stopwords. Don't forget to edit file to be used in EPU server";
+if [ -e "${PG_TSEARCH_DATA}/${LANGFULL}.stop" ]; then
+    sudo cp -v "${PG_TSEARCH_DATA}/${LANGFULL}.stop" "${PG_TSEARCH_DATA}/${LANGFULL}_original.stop";
+fi;
+--
+-- Run this once on the database like admin or postgres user
+--
+# creamos una copia de la configuracion de lenguaje '${LANGFULL}' a modo de backup
 CREATE TEXT SEARCH CONFIGURATION public.${LANGFULL}_original (
 	COPY = pg_catalog.$LANGFULL
 );
 COMMENT ON TEXT SEARCH CONFIGURATION public.${LANGFULL}_original
 IS 'copy of original postgres ${LANGFULL} text search configuration';
 
+# Usaremos el Text Configuration '${LANGFULL}'
+# Lo cambiamos para que ya no reconozca los siguientes objetos
+# emails, urls, subcarpetas, nombre del dominio, notacion cientifica
 ALTER TEXT SEARCH CONFIGURATION ${LANGFULL} 
     DROP MAPPING FOR email, url, url_path,host, sfloat;
 
+# creamos un nuevo diccionario con los archivos descargados
+# y el stopwords original con algunas palabras editadas
 CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell (
 	TEMPLATE  = ispell,
 	DictFile  = $identifier,
@@ -148,6 +161,7 @@ CREATE TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell (
 COMMENT ON TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell
 IS 'Hunspell dictionary for ${LANGFULL}_${identifier}';
 
+# añadimos el nuevo diccionario al Text Configuration '$LANGFULL'
 ALTER TEXT SEARCH CONFIGURATION $LANGFULL
 	ALTER MAPPING
 	FOR
@@ -156,5 +170,8 @@ ALTER TEXT SEARCH CONFIGURATION $LANGFULL
 		${LANGFULL}_${identifier}_hunspell, ${LANGFULL}_stem, simple;
 COMMENT ON TEXT SEARCH CONFIGURATION $LANGFULL
 IS 'configuration for ${LANGFULL}_${identifier} language';
+
+# Si realizamos algun cambio en los archivos ${LANGFULL}.stop o dict o affix, corremos para que el server vea los cambios
+ALTER TEXT SEARCH DICTIONARY ${LANGFULL}_${identifier}_hunspell ( dummy );
 EOF
 echo "Finished!"
